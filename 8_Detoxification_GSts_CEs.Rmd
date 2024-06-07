@@ -1,0 +1,748 @@
+---
+title: "Abundance of Genes for Detoxification of Secondary Metabolites"
+subtitle: "Secondary Metabolites"
+author: "Roey Angel and Nweze Julius"
+date: "`r Sys.Date()`"
+link-citations: yes
+csl: fems-microbiology-ecology.csl
+output:
+  rmarkdown::html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    keep_md: true
+    number_sections: false
+    highlight: "pygments"
+    theme: "flatly"
+    dev: "png"
+    df_print: "kable"
+    fig_caption: true
+    code_folding: "show"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+# Load libraries
+#.libPaths(c('~/R/library', .libPaths())) # Uncomment if you have no write access to R path
+
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+  "knitr", # A General-Purpose Package for Dynamic Report Generation in R
+  "kableExtra", # Construct Complex Table with 'kable' and Pipe Syntax
+  "rmarkdown", # Dynamic Documents for R
+  "extrafont", # for extra figure fonts
+  "tidyverse", # for dplyr forcats ggplot2 readr tibble
+  "grid", # The Grid Graphics Package
+  "magrittr", # pipes
+  "scales", # Generic plot scaling methods
+  "svglite", # for svg files
+  "vegan",
+  "egg",
+  "data.table",
+  "ggtree",
+  "compare",
+  "ggnewscale",
+  "arsenal",
+  "RColorBrewer",
+  "SciViews",
+  "ggridges",
+  "cowplot",
+  "lubridate",
+  "sunburstR",
+  "forcats",
+  "circlize",
+  "readODS",
+  "ampvis2",
+  "ggplot2", # for barplot
+  "ggpubr",
+  "car", # Companion to Applied Regression
+  "rcompanion", #Functions to Support Extension Education Program Evaluation
+  "multcomp", # Simultaneous Inference in General Parametric Models 
+  "nlme", # Fit Linear Model Using Generalized Least Squares
+  "ggResidpanel", # Panels and Interactive Versions of Diagnostic Plots using 
+  "lsmeans", # Least-Squares Means
+  "hrbrthemes"
+  
+) 
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c()
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+```{r style settings, include=F}
+options(width = 90, knitr.table.format = "html") 
+opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  cache = TRUE,
+  dev = "svglite",
+  fig.ext = "svg",
+  dpi = 300,
+#  fig.width = 12,
+#  fig.height = 8,
+  cache.path = "Metabolites_from_MAGs_loss_cache/",
+  fig.path = "Metabolites_from_MAGs_loss_figs/"
+)
+f_name <- "DejaVu Sans" #sub("\\s//", "", f_name)
+f_size <- 14
+font_import(pattern = "DejaVuSans", prompt = FALSE)
+loadfonts() # registers fonts
+theme_set(theme_bw(base_size = f_size, base_family = f_name)) # set theme for plots
+pom4 <- ggpomological:::pomological_palette[c(2, 9, 3, 11, 7, 13, 1, 15, 8, 14, 4, 10, 5, 12, 6, 16)] # set colours           
+```
+
+[roey.angel@bc.cas.cz](mailto: roey.angel@bc.cas.cz) 
+[julius.nweze@bc.cas.cz](mailto: julius.nweze@bc.cas.cz) 
+
+
+
+
+# Load datasets
+# Secondary metabolites in the MAGs
+```{r load Secondary metabolites data, cache = T}
+
+# Load the KO codes
+read_ods("GSts_CEs.ods", sheet = "Codes", col_names = TRUE)  -> 
+Codes
+
+
+# Load Relative abundance
+read_ods("GSts_CEs.ods", sheet = "MAGs_TPM", col_names = TRUE)  -> 
+MAGs_TPM
+
+
+# Load Taxa
+read_ods("GSts_CEs.ods", sheet = "Phyla", col_names = TRUE)  -> 
+Phyla
+
+
+# Merge Codes and abundance
+CytoGsTC_Abundance <-  Codes %>% inner_join(MAGs_TPM, by=c("Function", "UniprotID"), multiple = "all", relationship = "many-to-many") #%>% drop_na(TPM)
+
+# Include the taxa
+CytoGsTC_taxa_Abundance <-  CytoGsTC_Abundance %>% inner_join(Phyla, by=c("MAGs"), multiple = "all", relationship = "many-to-many") #%>% drop_na(TPM)
+
+
+# Save in rds
+saveRDS(CytoGsTC_taxa_Abundance, file = "RDS/CytoGsTC_taxa_Abundance.rds")
+
+# Read saved rds
+CytoGsTC_taxa_Abundanced <- readRDS("RDS/CytoGsTC_taxa_Abundance.rds")
+
+# Write out a .csv file
+write.csv(CytoGsTC_taxa_Abundance, "EpiGlo_CytoGsTC_taxa_Abundance.csv")
+
+```
+
+
+
+
+# E. pulchripes
+**Metagenomes data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Cytochrome P450
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Cytochrome P450") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Epibolus_ITOL_Detoxification_Cytochrome_P450_genes_abundance_MG.csv')
+
+########################################### Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Glutathione S_transferase") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Epibolus_ITOL_Detoxification_Glutathione_S_transferase_genes_abundance_MG.csv')
+
+########################################### Carboxylesterase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Carboxylesterase") %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Epibolus_ITOL_Detoxification_Carboxylesterase_genes_abundance_MG.csv')
+```
+
+
+
+# E. pulchripes
+**Metatranscriptome data for ITOL gene abundance plotting**
+**Metagenomes data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Cytochrome P450
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Cytochrome P450") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv("ITOL/Epibolus_ITOL_Detoxification_Cytochrome_P450_genes_abundance_MT.csv")
+
+########################################### Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Glutathione S_transferase") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Epibolus_ITOL_Detoxification_Glutathione_S_transferase_genes_abundance_MT.csv')
+
+########################################### Carboxylesterase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Carboxylesterase") %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Epibolus_ITOL_Detoxification_Carboxylesterase_genes_abundance_MT.csv')
+```
+
+
+
+
+# G. connexa
+**Metagenomes data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Cytochrome P450
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Cytochrome P450") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Cytochrome_P450_genes_abundance_MG.csv')
+
+########################################### Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Glutathione S_transferase") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Glutathione_S_transferase_genes_abundance_MG.csv')
+
+########################################### Carboxylesterase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MG") %>%
+  subset(Function == "Carboxylesterase") %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(TPM + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Carboxylesterase_genes_abundance_MG.csv')
+```
+
+
+
+# G. connexa
+**Metagenomes data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Cytochrome P450
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Cytochrome P450") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Cytochrome_P450_genes_abundance_MT.csv')
+
+########################################### Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Glutathione S_transferase") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Glutathione_S_transferase_genes_abundance_MT.csv')
+
+########################################### Carboxylesterase
+CytoGsTC_taxa_Abundance %>%
+  subset(Lib.type == "MT") %>%
+  subset(Function == "Carboxylesterase") %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('ITOL/Glomeris_ITOL_Detoxification_Carboxylesterase_genes_abundance_MT.csv')
+```
+
+
+
+**MAGs: Summary of gene abundance at phylum and family levels in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+grid.col2 = c(Actinobacteriota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Bdellovibrionota = "#d2b48cff", Cyanobacteria = "#9932ccff", Deferribacterota = "#ffd700ff", Desulfobacterota = "#a3dd57ff", Elusimicrobiota = "#e0eee0ff", Eremiobacterota = "#eee685ff", Methanobacteriota = "#ffb6c1ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", RUG730 = "#8b864eff", Spirochaetota = "#b03060ff", Synergistota = "#d0b100ff", Verrucomicrobiota  = "#636363ff")
+
+
+
+# E. pulchripes Phylum: Cytochrome P450, Carboxylesterase and Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+subset(Epibolus == "Yes") %>%
+subset(TPM >0) %>%
+group_by(Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Cytochrome P450", "Carboxylesterase", "Glutathione S_transferase"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(y = Function, x = DE, fill = Phylum)) + ylab("Function") + xlab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(~ Lib.type) + scale_fill_manual(values = grid.col2) +
+scale_x_continuous(breaks = c(2, 4, 6, 8, 10, 12, 14, 16, 18, 20), limits = c(0,20)) +
+theme(legend.position="right", strip.text = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 28), axis.text.x=element_text(size=30, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=32), legend.title = element_text(size = 24))
+
+ggsave("Epi_Cytochr_Carboxy_Glutathione_Phylum.svg", width = 50, height = 25, units = "cm")
+
+
+
+# G. connexa Phylum: Cytochrome P450, Carboxylesterase and Glutathione S_transferase
+CytoGsTC_taxa_Abundance %>%
+subset(Glomeris == "Yes") %>%
+subset(TPM >0) %>%
+group_by(Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Cytochrome P450", "Carboxylesterase", "Glutathione S_transferase"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(y = Function, x = DE, fill = Phylum)) + ylab("Function") + xlab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(~ Lib.type) + scale_fill_manual(values = grid.col2) +
+scale_x_continuous(breaks = c(2, 4, 6, 8, 10, 12, 14, 16, 18, 20), limits = c(0,20)) +
+theme(legend.position="right", strip.text = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 28), axis.text.x=element_text(size=30, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=32), legend.title = element_text(size = 24))
+
+ggsave("Glo_Cytochr_Carboxy_Glutathione_Phylum.svg", width = 50, height = 25, units = "cm")
+```
+
+
+
+
+
+
+
+**Secondary metabolites in the libraries (MG & MT): Cytochrome_P450**
+```{r load Secondary metabolites data, cache = T}
+
+# Load the KO codes
+read_ods("GSts_CEs.ods", sheet = "Codes", col_names = TRUE)  -> 
+Codes
+
+
+# Load Relative abundance
+read_ods("GSts_CEs.ods", sheet = "Cytochrome_P450_MGMT_TPM", col_names = TRUE) -> 
+CytoTPM
+
+
+# Load Taxa
+read_ods("GSts_CEs.ods", sheet = "Cytochrome_P450_phyla", col_names = TRUE) -> 
+Cytochrome_P450_phyla
+
+
+# Include the taxa
+Cyto_Abundance_taxa <-  Cytochrome_P450_phyla %>% left_join(CytoTPM, by=c("Species.type", "Function", "Lib.type", "Entry", "UniprotID", "Contigs"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+
+# Merge Codes and abundance
+Cyto_taxa_Abundance_MGMT  <-  Cyto_Abundance_taxa %>% left_join(Codes, by=c("Function", "UniprotID"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+ 
+# Write out a .csv file
+write.csv(Cyto_taxa_Abundance_MGMT, "Cytochrome_P450_taxa_Abundance_MGMT.csv")
+
+```
+
+
+**Community Cytochrome_P450 abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+# Number of genes in E. pulchripes and G. connexa
+Cyto_taxa_Abundance_MGMT %>%
+subset(TPM >0) %>%
+group_by(Species.type, Lib.type, Function) %>%
+reframe(Counts = n()) %>%
+group_by(Species.type, Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+```
+
+
+**Community abundance of Cytochrome_P450 at phylum and family levels**
+```{r load SM plotting, cache = T}
+grid.col2 <- c(`Candidatus Thermoplasmatota` = "#FF6347", Acidobacteriota = "#eecfa1ff", Actinomycetota = "#428953ff", Armatimonadota = "#9400d3ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Chloroflexota = "#009999", Cyanobacteriota = "#9932ccff", `Deinococcus-Thermus` = "#C67188", Desulfobacterota = "#a3dd57ff", Gemmatimonadota = "#e00272ff", Lentisphaerota = "#FF0000", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", Verrucomicrobiota = "#636363ff", Synergistota = "#d0b100ff", `Unclassified bacteria` = "#193300", Uroviricota = "#F5DEB3", Chlorophyta = "#FFFF00", Ascomycota = "#CD5C5C", `Unclassified fungi` = "#E9967A",  Amoebozoa = "#FF00FF", Nematoda = "#008080", Euglenozoa = "#a0522dff", Arthropoda ="#FFFF33") 
+
+
+
+# Phylum
+Cyto_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+mutate(Phylum = factor(Phylum, levels = c(
+"Candidatus Thermoplasmatota", "Acidobacteriota", "Actinomycetota", "Armatimonadota", "Bacillota", "Bacteroidota", "Chloroflexota", "Cyanobacteriota", "Deinococcus-Thermus", "Desulfobacterota", "Gemmatimonadota", "Lentisphaerota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "Verrucomicrobiota", "Synergistota", "Unclassified bacteria", "Uroviricota", "Chlorophyta", "Ascomycota", "Unclassified fungi", "Amoebozoa", "Nematoda", "Euglenozoa",  "Arthropoda"))) %>%
+group_by(Species.type, Lib.type, Phylum) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Species.type, Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) ->
+
+Cyto_EpiGlo
+ 
+Cyto_EpiGlo %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(Percent)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+Cyto_EpiGlo %>%
+ggplot(aes(y = Species.type, x = DE, fill = Phylum)) + ylab("Cytochrome P450") + xlab("Relative abundance (%)") +
+geom_bar(position="fill", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+facet_grid(~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24)) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Cytochrome_P450_genes_Phylum_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+# Family
+Cyto_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+group_by(Species.type, Lib.type, Family) %>%
+reframe(DE = sum(TPM)/10^4)  %>%
+group_by(Species.type, Lib.type) %>%
+slice_max(order_by = DE, n = 8)->
+
+Cyto_EpiGlo_F
+ 
+Cyto_EpiGlo_F %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(DE)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+
+Cyto_EpiGlo_F %>%
+ggplot() + theme_bw() + geom_linerange(aes(y = Family, xmin = 0, xmax = DE, colour = Species.type), position = position_dodge(width = 1)) +
+geom_point(aes(y = Family, x = DE, colour = Species.type), size = 8, position = position_dodge(width = 1)) +
+ylab("Species.type") +  xlab("Relative abundance (TPM*10^4)") +
+scale_x_continuous(breaks = c(10, 20, 30, 40, 50), limits = c(0,50), expand = c(0, 0)) +
+theme(axis.text=element_text(size=30, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 24),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) +
+facet_grid(~ Lib.type) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Cytochrome_P450_genes_Family_MGMT.svg", width = 50, height = 25, units = "cm")
+```
+
+
+
+
+
+
+
+
+
+**Secondary metabolites in the libraries (MG & MT): Glutathione_S_transferase**
+```{r load Secondary metabolites data, cache = T}
+
+# Load the KO codes
+read_ods("GSts_CEs.ods", sheet = "Codes", col_names = TRUE)  -> 
+Codes
+
+
+# Load Relative abundance
+read_ods("GSts_CEs.ods", sheet = "Glutathione_S_transferase_MGMT_TPM", col_names = TRUE) -> 
+G_S_transTPM
+
+
+# Load Taxa
+read_ods("GSts_CEs.ods", sheet = "Glutathione_S_transferase_phyla", col_names = TRUE) -> 
+Glutathione_S_transferase_phyla
+
+
+# Include the taxa
+G_S_trans_Abundance_taxa <-  Glutathione_S_transferase_phyla %>% left_join(G_S_transTPM, by=c("Species.type", "Function", "Lib.type", "Entry", "UniprotID", "Contigs"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+
+# Merge Codes and abundance
+G_S_trans_taxa_Abundance_MGMT  <-  G_S_trans_Abundance_taxa %>% left_join(Codes, by=c("Function", "UniprotID"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+ 
+# Write out a .csv file
+write.csv(G_S_trans_taxa_Abundance_MGMT, "Glutathione_S_transferase_taxa_Abundance_MGMT.csv")
+
+```
+
+
+**Community Glutathione_S_transferase abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+# Number of genes in E. pulchripes and G. connexa
+G_S_trans_taxa_Abundance_MGMT %>%
+subset(TPM >0) %>%
+group_by(Species.type, Lib.type, Function) %>%
+reframe(Counts = n()) %>%
+group_by(Species.type, Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+```
+
+
+
+**Community abundance of Glutathione_S_transferase at phylum and family levels**
+```{r load SM plotting, cache = T}
+
+grid.col2 <- c(Euryarchaeota = "#ffb6c1ff", Acidobacteriota = "#eecfa1ff", Actinomycetota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Chloroflexota = "#009999", `Deinococcus-Thermus` = "#C67188", Desulfobacterota = "#a3dd57ff", Myxococcota = "#5675d6ff", Pseudomonadota = "#0000ffff", Rhodothermaeota = "darkgoldenrod4", `Unclassified bacteria` = "#193300", `Unclassified Bacteriophage`  = "chartreuse3", Chlorophyta = "#FFFF00", Ascomycota = "#CD5C5C", Basidiomycota = "#A52A2A") 
+
+                                            
+
+# Phylum
+G_S_trans_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+mutate(Phylum = factor(Phylum, levels = c("Euryarchaeota", "Acidobacteriota", "Actinomycetota", "Bacillota", "Bacteroidota", "Chloroflexota", "Deinococcus-Thermus", "Desulfobacteriota",  "Myxococcota", "Pseudomonadota", "Rhodothermaeota", "Unclassified bacteria", "Unclassified Bacteriophage", "Chlorophyta", "Ascomycota", "Basidiomycota"))) %>%
+group_by(Species.type, Lib.type, Phylum) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Species.type, Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) ->
+
+G_S_trans_EpiGlo
+ 
+G_S_trans_EpiGlo %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(Percent)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+G_S_trans_EpiGlo %>%
+ggplot(aes(y = Species.type, x = DE, fill = Phylum)) + ylab("Glutathione_S_transferase") + xlab("Relative abundance (%)") +
+geom_bar(position="fill", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+facet_grid(~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24)) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Glutathione_S_transferase_genes_Phylum_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+# Family
+G_S_trans_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+group_by(Species.type, Lib.type, Family) %>%
+reframe(DE = sum(TPM)/10^4)  %>%
+group_by(Species.type, Lib.type) %>%
+slice_max(order_by = DE, n = 8)->
+
+G_S_trans_EpiGlo_F
+ 
+G_S_trans_EpiGlo_F %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(DE)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+
+G_S_trans_EpiGlo_F %>%
+ggplot() + theme_bw() + geom_linerange(aes(y = Family, xmin = 0, xmax = DE, colour = Species.type), position = position_dodge(width = 1)) +
+geom_point(aes(y = Family, x = DE, colour = Species.type), size = 8, position = position_dodge(width = 1)) +
+ylab("Species.type") +  xlab("Relative abundance (TPM*10^4)") +
+scale_x_continuous(breaks = c(10, 20, 30, 40, 50), limits = c(0,50), expand = c(0, 0)) +
+theme(axis.text=element_text(size=30, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 24),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) +
+facet_grid(~ Lib.type) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Glutathione_S_transferase_genes_Family_MGMT.svg", width = 50, height = 25, units = "cm")
+```
+
+
+
+
+
+
+
+**Secondary metabolites in the libraries (MG & MT): Carboxylesterase**
+```{r load Carboxylesterase data, cache = T}
+
+# Load the KO codes
+read_ods("GSts_CEs.ods", sheet = "Codes", col_names = TRUE)  -> 
+Codes
+
+
+# Load Relative abundance
+read_ods("GSts_CEs.ods", sheet = "Carboxylesterase_MGMT_TPM", col_names = TRUE) -> 
+CarboxylesteraseTPM
+
+
+# Load Taxa
+read_ods("GSts_CEs.ods", sheet = "Carboxylesterase_phyla", col_names = TRUE) -> 
+Carboxylesterase_phyla
+
+
+# Include the taxa
+Carboxylesterase_Abundance_taxa <-  Carboxylesterase_phyla %>% left_join(CarboxylesteraseTPM, by=c("Species.type", "Function", "Lib.type", "Entry", "UniprotID", "Contigs"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+
+# Merge Codes and abundance
+Carboxylesterase_taxa_Abundance_MGMT  <-  Carboxylesterase_Abundance_taxa %>% left_join(Codes, by=c("Function", "UniprotID"), relationship = "many-to-many") %>% drop_na(Phylum)
+
+ 
+# Write out a .csv file
+write.csv(Carboxylesterase_taxa_Abundance_MGMT, "Carboxylesterase_taxa_Abundance_MGMT.csv")
+
+```
+
+
+**Community Cytochrome_P450 abundance in E. pulchripes and G. connexa**
+```{r table Carboxylesterase plotting, cache = T}
+# Number of genes in E. pulchripes and G. connexa
+Carboxylesterase_taxa_Abundance_MGMT %>%
+subset(TPM >0) %>%
+group_by(Species.type, Lib.type, Function) %>%
+reframe(Counts = n()) %>%
+group_by(Species.type, Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+```
+
+
+
+**Community abundance of Cytochrome_P450 at phylum and family levels**
+```{r load SM plotting, cache = T}
+grid.col2 <- c(Acidobacteriota = "#eecfa1ff", Actinomycetota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Chloroflexota = "#009999", Cyanobacteriota = "#9932ccff", `Deinococcus-Thermus` = "#C67188", Desulfobacterota = "#a3dd57ff", Gemmatimonadota = "#e00272ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", Verrucomicrobiota = "#636363ff", `Unclassified bacteria` = "#193300", Ascomycota = "#CD5C5C", Apusozoa = "#458B74") 
+
+
+# Phylum
+Carboxylesterase_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda", "Unclassified organisms"))) %>%
+mutate(Phylum = factor(Phylum, levels = c("Acidobacteria", "Actinomycetota","Bacillota", "Bacteroidota", "Chloroflexota", "Cyanobacteriota", "Deinococcus-Thermus", "Desulfobacteriota", "Gemmatimonadota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "Verrucomicrobia",  "Unclassified bacteria", "Ascomycota", "Apusozoa"))) %>%
+group_by(Species.type, Lib.type, Phylum) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Species.type, Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) ->
+
+Carboxylesterase_EpiGlo
+ 
+Carboxylesterase_EpiGlo %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(Percent)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+Carboxylesterase_EpiGlo %>%
+ggplot(aes(y = Species.type, x = DE, fill = Phylum)) + ylab("Carboxylesterase") + xlab("Relative abundance (%)") +
+geom_bar(position="fill", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+facet_grid(~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24)) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Carboxylesterase_genes_Phylum_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+# Family
+Carboxylesterase_taxa_Abundance_MGMT %>% 
+subset(TPM >0) %>%
+filter(!(Phylum %in% c("Arthropoda", "Unclassified organisms"))) %>%
+group_by(Species.type, Lib.type, Family) %>%
+reframe(DE = sum(TPM)/10^4)  %>%
+group_by(Species.type, Lib.type) %>%
+slice_max(order_by = DE, n = 8)->
+
+Carboxylesterase_EpiGlo_F
+ 
+Carboxylesterase_EpiGlo_F %>% 
+group_by(Species.type, Lib.type) %>% 
+arrange(.by_group = TRUE, desc(DE)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+
+Carboxylesterase_EpiGlo_F %>%
+ggplot() + theme_bw() + geom_linerange(aes(y = Family, xmin = 0, xmax = DE, colour = Species.type), position = position_dodge(width = 1)) +
+geom_point(aes(y = Family, x = DE, colour = Species.type), size = 8, position = position_dodge(width = 1)) +
+ylab("Species.type") +  xlab("Relative abundance (TPM*10^4)") +
+scale_x_continuous(breaks = c(10, 20, 30, 40, 50), limits = c(0,50), expand = c(0, 0)) +
+theme(axis.text=element_text(size=30, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 24),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) +
+facet_grid(~ Lib.type) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Carboxylesterase_genes_Family_MGMT.svg", width = 50, height = 25, units = "cm")
+```

@@ -1,0 +1,2063 @@
+---
+title: "Abundance of Genes for Detoxification of Secondary Metabolites"
+subtitle: "Secondary Metabolites"
+author: "Roey Angel and Nweze Julius"
+date: "`r Sys.Date()`"
+link-citations: yes
+csl: fems-microbiology-ecology.csl
+output:
+  rmarkdown::html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    keep_md: true
+    number_sections: false
+    highlight: "pygments"
+    theme: "flatly"
+    dev: "png"
+    df_print: "kable"
+    fig_caption: true
+    code_folding: "show"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+# Load libraries
+#.libPaths(c('~/R/library', .libPaths())) # Uncomment if you have no write access to R path
+
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+  "knitr", # A General-Purpose Package for Dynamic Report Generation in R
+  "kableExtra", # Construct Complex Table with 'kable' and Pipe Syntax
+  "rmarkdown", # Dynamic Documents for R
+  "extrafont", # for extra figure fonts
+  "tidyverse", # for dplyr forcats ggplot2 readr tibble
+  "grid", # The Grid Graphics Package
+  "magrittr", # pipes
+  "scales", # Generic plot scaling methods
+  "svglite", # for svg files
+  "vegan",
+  "egg",
+  "data.table",
+  "ggtree",
+  "compare",
+  "ggnewscale",
+  "arsenal",
+  "RColorBrewer",
+  "SciViews",
+  "ggridges",
+  "cowplot",
+  "lubridate",
+  "sunburstR",
+  "forcats",
+  "circlize",
+  "readODS",
+  "ampvis2",
+  "ggplot2", # for barplot
+  "ggpubr",
+  "car", # Companion to Applied Regression
+  "rcompanion", #Functions to Support Extension Education Program Evaluation
+  "multcomp", # Simultaneous Inference in General Parametric Models 
+  "nlme", # Fit Linear Model Using Generalized Least Squares
+  "ggResidpanel", # Panels and Interactive Versions of Diagnostic Plots using 
+  "lsmeans", # Least-Squares Means
+  "hrbrthemes"
+  
+) 
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c()
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+```{r style settings, include=F}
+options(width = 90, knitr.table.format = "html") 
+opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  cache = TRUE,
+  dev = "svglite",
+  fig.ext = "svg",
+  dpi = 300,
+#  fig.width = 12,
+#  fig.height = 8,
+  cache.path = "Metabolites_from_MAGs_loss_cache/",
+  fig.path = "Metabolites_from_MAGs_loss_figs/"
+)
+f_name <- "DejaVu Sans" #sub("\\s//", "", f_name)
+f_size <- 14
+font_import(pattern = "DejaVuSans", prompt = FALSE)
+loadfonts() # registers fonts
+theme_set(theme_bw(base_size = f_size, base_family = f_name)) # set theme for plots
+pom4 <- ggpomological:::pomological_palette[c(2, 9, 3, 11, 7, 13, 1, 15, 8, 14, 4, 10, 5, 12, 6, 16)] # set colours           
+```
+
+[roey.angel@bc.cas.cz](mailto: roey.angel@bc.cas.cz) 
+[julius.nweze@bc.cas.cz](mailto: julius.nweze@bc.cas.cz) 
+
+
+
+
+# Load datasets
+# Secondary metabolites
+```{r load Secondary metabolites data, cache = T}
+
+# Load the KO codes
+read_ods("Detooxification_MAGs.ods", sheet = "KO", col_names = TRUE)  -> 
+KO
+
+# Load taxa
+read_ods("Detooxification_MAGs.ods", sheet = "Phyla", col_names = TRUE)  -> 
+Phyla
+
+
+# Load Relative abundance
+read_ods("Detooxification_MAGs.ods", sheet = "RT", col_names = TRUE)  -> 
+RT
+
+
+# Load E30
+read_ods("Detooxification_MAGs.ods", sheet = "E30", col_names = TRUE)  -> 
+E30
+
+
+
+# Merge E30 and abundance
+E30_Abundance <-  E30 %>% inner_join(RT, by=c("MAGs", "Contigs", "UniProtKB"), multiple = "all", relationship = "many-to-many") %>% drop_na(Contigs)
+
+
+# Merge KO, E30 and abundance
+E30_Abundance_KO <-  KO %>% right_join(E30_Abundance, by=c("UniProtKB"), multiple = "all", relationship = "many-to-many") #%>% drop_na(KO)
+
+
+# Merge KO, Phyla, E30 and abundance
+E30_Abundance_Phyla_KO <-  Phyla %>% right_join(E30_Abundance_KO, by=c("MAGs"), multiple = "all", relationship = "many-to-many") #%>% drop_na()
+
+
+# Write out a .csv file
+write.csv(E30_Abundance_Phyla_KO, "EpiGlo_Detoxification_genes_abundance.csv")
+
+```
+
+
+# E. pulchripes
+**Metagenomes data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Oxalate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Oxalate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("frc", "oxc", "oxdD", "oxlT", "uctC", "yfdE", "oorA", "oorB", "oorD", "AAE3"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Oxalate_genes_abundance.csv')
+
+########################################### Tannin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Tannin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("tanA", "tanB", "ubiX", "lpdB", "lpdC", "lpdD", "tanL"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Tannin_genes_abundance.csv')
+
+########################################### Benzoate
+E30_Abundance_Phyla_KO %>%
+  subset(Epibolus == "Yes") %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Benzoate") %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("benA-xylX", "benA", "benB-xylY", "benB", "benC-xylZ", "benC", "benD-xylL", "benD"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Benzoate_genes_abundance.csv')
+
+########################################### Catechol-ortho
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Catechol-ortho") %>%
+ group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("catA", "catB", "catC", "catR", "pcaD", "pcaL", "pcaL", "pcaI", "pcaJ", "pcaF", "fadA", "fadI"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Catechol-ortho_genes_abundance.csv')
+
+########################################### Catechol-meta
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Catechol-meta") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("xylE", "catE", "xylG", "xylH", "xylI", "xylF", "xylJ", "mhpD", "xylK", "mhpE", "xylQ", "mhpF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Catechol-meta_genes_abundance.csv')
+
+########################################### Benzoyl-CoA
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Benzoyl-CoA") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("bcrC", "bcrB", "bcrA", "bcrD", "bamB", "bamC", "dch", "had", "oah"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Benzoyl-CoA_genes_abundance.csv')
+
+########################################### Protocatechuate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Protocatechuate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("pobA", "pobB", "pcaH", "pcaG", "pcaB", "pcaC", "pcaD", "pcaI", "pcaJ", "pcaF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Protocatechuate_genes_abundance.csv')
+
+
+########################################### Gentisate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Gentisate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("mhbD", "mhbl", "mhbH", "mobA"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Gentisate_genes_abundance.csv')
+
+
+########################################### Lignin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Lignin") %>%
+ group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA1", "AA3", "AA5", "AA12", "AA10", "AA6", "AA7", "AA4", "AA0", "AA2"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Lignin_genes_abundance.csv')
+
+
+
+########################################### subset Gallate, Pyrogallol, Hydroquinone, Hydroxyquinol, Hydrogen peroxide, & Superoxide
+E30_Abundance_Phyla_KO %>%
+  filter(Library.type == "Metagenome", Function %in% c("Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Hydrogen peroxide", "Superoxide")) %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris) %>%
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c('galA', 'galD', 'galB', 'galC', 'galP', 'galT', 'galR', 'athL', 'bthL', 'pgrcl', 'dpgC', 'linE', 'hapE', 'chqB', 'macA', 'katA', 'katB', 'katE', 'katG', 'ydbD', 'sodA', 'sodB', 'sodC', 'sodM', 'sodN', 'YojM', 'dfx', 'mbnA'))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_GallatePHHHS_genes_abundance.csv')
+
+```
+
+
+
+# E. pulchripes
+**Metatranscriptome data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL, cache = T}
+########################################### Oxalate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Oxalate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("frc", "oxc", "oxdD", "oxlT", "uctC", "yfdE", "oorA", "oorB", "oorD", "AAE3"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Oxalate_genes_abundance.csv')
+
+########################################### Tannin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Tannin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("tanA", "tanB", "ubiX", "lpdB", "lpdC", "lpdD", "tanL"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Tannin_genes_abundance.csv')
+
+########################################### Benzoate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Benzoate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("benA-xylX", "benA", "benB-xylY", "benB", "benC-xylZ", "benC", "benD-xylL", "benD"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Benzoate_genes_abundance.csv')
+
+########################################### Catechol-ortho
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Catechol-ortho") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("catA", "catB", "catC", "catR", "pcaD", "pcaL", "pcaL", "pcaI", "pcaJ", "pcaF", "fadA", "fadI"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Catechol-ortho_genes_abundance.csv')
+
+########################################### Catechol-meta
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Catechol-meta") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("xylE", "catE", "xylG", "xylH", "xylI", "xylF", "xylJ", "mhpD", "xylK", "mhpE", "xylQ", "mhpF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Catechol-meta_genes_abundance.csv')
+
+########################################### Benzoyl-CoA
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Benzoyl-CoA") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("bcrC", "bcrB", "bcrA", "bcrD", "bamB", "bamC", "dch", "had", "oah"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Benzoyl-CoA_genes_abundance.csv')
+
+########################################### Protocatechuate 
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Protocatechuate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("pobA", "pobB", "pcaH", "pcaG", "pcaB", "pcaC", "pcaD", "pcaI", "pcaJ", "pcaF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Protocatechuate_genes_abundance.csv')
+
+
+########################################### Gentisate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Gentisate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("mhbD", "mhbl", "mhbH", "mobA"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Gentisate_genes_abundance.csv')
+
+
+########################################### Lignin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Lignin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA1", "AA3", "AA5", "AA12", "AA10", "AA6", "AA7", "AA4", "AA0", "AA2"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_Lignin_genes_abundance.csv')
+
+
+########################################### subset Gallate, Pyrogallol, Hydroquinone, Hydroxyquinol, Hydrogen peroxide, & Superoxide
+E30_Abundance_Phyla_KO %>%
+  filter(Library.type == "Metatranscriptome", Function %in% c("Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Hydrogen peroxide", "Superoxide")) %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c('galA', 'galD', 'galB', 'galC', 'galP', 'galT', 'galR', 'athL', 'bthL', 'pgrcl', 'dpgC', 'linE', 'hapE', 'chqB', 'macA', 'katA', 'katB', 'katE', 'katG', 'ydbD', 'sodA', 'sodB', 'sodC', 'sodM', 'sodN', 'YojM', 'dfx', 'mbnA'))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Epibolus, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Epibolus_ITOL_Detoxification_GallatePHHHS_genes_abundance.csv')
+
+```
+
+
+
+
+
+# G. connexa
+**Metagenome data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL G. connexa, cache = T}
+########################################### Oxalate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Oxalate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("frc", "oxc", "oxdD", "oxlT", "uctC", "yfdE", "oorA", "oorB", "oorD", "AAE3"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Oxalate_genes_abundance.csv')
+
+########################################### Tannin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Tannin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("tanA", "tanB", "ubiX", "lpdB", "lpdC", "lpdD", "tanL"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Tannin_genes_abundance.csv')
+
+########################################### Benzoate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Benzoate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("benA-xylX", "benA", "benB-xylY", "benB", "benC-xylZ", "benC", "benD-xylL", "benD"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Benzoate_genes_abundance.csv')
+
+########################################### Catechol-ortho
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Catechol-ortho") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("catA", "catB", "catC", "catR", "pcaD", "pcaL", "pcaL", "pcaI", "pcaJ", "pcaF", "fadA", "fadI"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Catechol-ortho_genes_abundance.csv')
+
+########################################### Catechol-meta
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Catechol-meta") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("xylE", "catE", "xylG", "xylH", "xylI", "xylF", "xylJ", "mhpD", "xylK", "mhpE", "xylQ", "mhpF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Catechol-meta_genes_abundance.csv')
+
+########################################### Benzoyl-CoA
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Benzoyl-CoA") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("bcrC", "bcrB", "bcrA", "bcrD", "bamB", "bamC", "dch", "had", "oah"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Benzoyl-CoA_genes_abundance.csv')
+
+########################################### Protocatechuate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Protocatechuate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("pobA", "pobB", "pcaH", "pcaG", "pcaB", "pcaC", "pcaD", "pcaI", "pcaJ", "pcaF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Protocatechuate_genes_abundance.csv')
+
+
+########################################### Gentisate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Gentisate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("mhbD", "mhbl", "mhbH", "mobA"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Gentisate_genes_abundance.csv')
+
+
+########################################### Lignin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metagenome") %>%
+  subset(Function == "Lignin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA1", "AA3", "AA5", "AA12", "AA10", "AA6", "AA7", "AA4", "AA0", "AA2"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Lignin_genes_abundance.csv')
+
+
+
+########################################### subset Gallate, Pyrogallol, Hydroquinone, Hydroxyquinol, Hydrogen peroxide, & Superoxide
+E30_Abundance_Phyla_KO %>%
+  filter(Library.type == "Metagenome", Function %in% c("Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Hydrogen peroxide", "Superoxide")) %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris) %>%
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c('galA', 'galD', 'galB', 'galC', 'galP', 'galT', 'galR', 'athL', 'bthL', 'pgrcl', 'dpgC', 'linE', 'hapE', 'chqB', 'macA', 'katA', 'katB', 'katE', 'katG', 'ydbD', 'sodA', 'sodB', 'sodC', 'sodM', 'sodN', 'YojM', 'dfx', 'mbnA'))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_GallatePHHHS_genes_abundance.csv')
+
+```
+
+
+
+# G. connexa
+**Metatranscriptome data for ITOL gene abundance plotting**
+```{r load SM analysis for ITOL G. connexa, cache = T}
+########################################### Oxalate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Oxalate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("frc", "oxc", "oxdD", "oxlT", "uctC", "yfdE", "oorA", "oorB", "oorD", "AAE3"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Oxalate_genes_abundance.csv')
+
+########################################### Tannin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Tannin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("tanA", "tanB", "ubiX", "lpdB", "lpdC", "lpdD", "tanL"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Tannin_genes_abundance.csv')
+
+########################################### Benzoate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Benzoate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("benA-xylX", "benA", "benB-xylY", "benB", "benC-xylZ", "benC", "benD-xylL", "benD"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Benzoate_genes_abundance.csv')
+
+########################################### Catechol-ortho
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Catechol-ortho") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("catA", "catB", "catC", "catR", "pcaD", "pcaL", "pcaL", "pcaI", "pcaJ", "pcaF", "fadA", "fadI"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Catechol-ortho_genes_abundance.csv')
+
+########################################### Catechol-meta
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Catechol-meta") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("xylE", "catE", "xylG", "xylH", "xylI", "xylF", "xylJ", "mhpD", "xylK", "mhpE", "xylQ", "mhpF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Catechol-meta_genes_abundance.csv')
+
+########################################### Benzoyl-CoA
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Benzoyl-CoA") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("bcrC", "bcrB", "bcrA", "bcrD", "bamB", "bamC", "dch", "had", "oah"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Benzoyl-CoA_genes_abundance.csv')
+
+########################################### Protocatechuate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Protocatechuate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("pobA", "pobB", "pcaH", "pcaG", "pcaB", "pcaC", "pcaD", "pcaI", "pcaJ", "pcaF"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Protocatechuate_genes_abundance.csv')
+
+
+########################################### Gentisate
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Gentisate") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("mhbD", "mhbl", "mhbH", "mobA"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Gentisate_genes_abundance.csv')
+
+
+########################################### Lignin
+E30_Abundance_Phyla_KO %>%
+  subset(Library.type == "Metatranscriptome") %>%
+  subset(Function == "Lignin") %>%
+  group_by(MAGs, Function,	Gene.abbreviation, Epibolus, Glomeris)  %>% 
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA1", "AA3", "AA5", "AA12", "AA10", "AA6", "AA7", "AA4", "AA0", "AA2"))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_Lignin_genes_abundance.csv')
+
+
+
+########################################### subset Gallate, Pyrogallol, Hydroquinone, Hydroxyquinol, Hydrogen peroxide, & Superoxide
+E30_Abundance_Phyla_KO %>%
+  filter(Library.type == "Metatranscriptome", Function %in% c("Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Hydrogen peroxide", "Superoxide")) %>%
+  group_by(MAGs, Function, Gene.abbreviation, Epibolus, Glomeris) %>%
+  mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c('galA', 'galD', 'galB', 'galC', 'galP', 'galT', 'galR', 'athL', 'bthL', 'pgrcl', 'dpgC', 'linE', 'hapE', 'chqB', 'macA', 'katA', 'katB', 'katE', 'katG', 'ydbD', 'sodA', 'sodB', 'sodC', 'sodM', 'sodN', 'YojM', 'dfx', 'mbnA'))) %>%
+  mutate(DE = sum(TPM)) %>%
+  mutate(DE_log = log10(DE + 1)) %>%
+  reshape2::dcast(Gene.abbreviation ~ MAGs+Glomeris, value.var = "DE_log", fun.aggregate = mean) %>%
+  write.csv('Glomeris_ITOL_Detoxification_GallatePHHHS_genes_abundance.csv')
+
+```
+
+
+
+
+**MAG Metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+grid.col = c(`Catechol-ortho` = "#5675d6ff", `Catechol-meta` = "#9400d3ff", Protocatechuate = "#65ecefff", Gentisate = "#ff8b07ff", Gallate = "#428953ff", Pyrogallol = "#ce2929ff", Hydroquinone = "#a3dd57ff",  Hydroxyquinol = "#826d00ff", Benzoate = "#77e599ff", `Benzoyl-CoA` = "#eecfa1ff")
+
+## For E. pulchripes
+E30_Abundance_Phyla_KO %>%
+filter(Epibolus == "Yes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Library.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)/10^6)  %>%
+ggplot() + theme_bw() + geom_linerange(aes(x = Function, ymin = 0, ymax = DE, colour = Function), position = position_dodge(width = 1)) +
+geom_point(aes(x = Function, y = DE, colour = Function), size = 8, position = position_dodge(width = 1)) +
+xlab("Metabolites") +  ylab("Relative abundance (TPM*10^6)") +
+scale_y_continuous(breaks = c(2, 5, 10, 15, 20), limits = c(0,20), expand = c(0, 0)) +
+scale_colour_manual(values = grid.col) +
+facet_wrap(~Library.type, ncol = 1) +
+theme(axis.text=element_text(size=28, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 30),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) 
+
+ggsave("Epi_MAGs_intermediate_metabolites_MGMT.svg",width = 25, height = 25, units = "cm")
+
+
+
+
+
+## For G. connexa
+E30_Abundance_Phyla_KO %>%
+filter(Glomeris == "Yes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Library.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)/10^6)  %>%
+ggplot() + theme_bw() + geom_linerange(aes(x = Function, ymin = 0, ymax = DE, colour = Function), position = position_dodge(width = 1)) +
+geom_point(aes(x = Function, y = DE, colour = Function), size = 8, position = position_dodge(width = 1)) +
+xlab("Metabolites") +  ylab("Relative abundance (TPM*10^6)") +
+scale_y_continuous(breaks = c(2, 5, 10, 15, 20), limits = c(0,20), expand = c(0, 0)) +
+scale_colour_manual(values = grid.col) +
+facet_wrap(~Library.type, ncol = 1) +
+theme(axis.text=element_text(size=28, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 30),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) 
+
+ggsave("Glo_MAGs_intermediate_metabolites_MGMT.svg",width = 25, height = 25, units = "cm")
+
+```
+
+
+
+
+
+
+**MAGs: Phylum level metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+
+## For E. pulchripes
+E30_Abundance_Phyla_KO$Lib.Function <- paste(E30_Abundance_Phyla_KO$Library.type, E30_Abundance_Phyla_KO$Function, sep="_")
+
+E30_Abundance_Phyla_KO %>%
+filter(Epibolus == "Yes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.Function, Phylum) %>%
+reframe(DE = sum(TPM)/10^6) ->
+MAG_SM_Epi2
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Actinobacteriota", "Bacillota", "Bacteroidota", "Cyanobacteria", "Deferribacterota", "Desulfobacterota", "Elusimicrobiota", "Eremiobacterota", "Methanobacteriota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "RUG730", "Spirochaetota", "Synergistota", "Verrucomicrobiota")
+
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Actinobacteriota", "Bacillota", "Bacteroidota", "Cyanobacteria", "Deferribacterota", "Desulfobacterota", "Elusimicrobiota", "Eremiobacterota", "Methanobacteriota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "RUG730", "Spirochaetota", "Synergistota", "Verrucomicrobiota")
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroquinone = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroquinone = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Actinobacteriota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Cyanobacteria = "#9932ccff", Deferribacterota = "#ffd700ff", Desulfobacterota = "#a3dd57ff", Elusimicrobiota = "#e0eee0ff", Eremiobacterota = "#eee685ff", Methanobacteriota = "#ffb6c1ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", RUG730 = "#8b864eff", Spirochaetota = "#b03060ff", Synergistota = "#d0b100ff", Verrucomicrobiota  = "#636363ff")
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroquinone = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroquinone = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(Actinobacteriota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Cyanobacteria = "#9932ccff", Deferribacterota = "#ffd700ff", Desulfobacterota = "#a3dd57ff", Elusimicrobiota = "#e0eee0ff", Eremiobacterota = "#eee685ff", Methanobacteriota = "#ffb6c1ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", RUG730 = "#8b864eff", Spirochaetota = "#b03060ff", Synergistota = "#d0b100ff", Verrucomicrobiota  = "#636363ff")
+                                  
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(MAG_SM_Epi2, annotationTrack = "grid", order = order, preAllocateTracks = 1, grid.col = grid.col, grid.border = 1, transparency = 0.7, annotationTrackHeight = mm_h(5))
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.4, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+
+
+# re-set circos parameters
+circos.clear()  
+
+
+
+
+
+
+## For G. connexa
+E30_Abundance_Phyla_KO$Lib.Function <- paste(E30_Abundance_Phyla_KO$Library.type, E30_Abundance_Phyla_KO$Function, sep="_")
+
+E30_Abundance_Phyla_KO %>%
+filter(Glomeris == "Yes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.Function, Phylum) %>%
+reframe(DE = sum(TPM)/10^6) ->
+MAG_SM_Glo2
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Actinobacteriota", "Bacillota", "Bacteroidota", "Cyanobacteria", "Deferribacterota", "Desulfobacterota", "Elusimicrobiota", "Eremiobacterota", "Methanobacteriota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "RUG730", "Spirochaetota", "Synergistota", "Verrucomicrobiota")
+
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Actinobacteriota", "Bacillota", "Bacteroidota", "Cyanobacteria", "Deferribacterota", "Desulfobacterota", "Elusimicrobiota", "Eremiobacterota", "Methanobacteriota", "Myxococcota", "Planctomycetota", "Pseudomonadota", "RUG730", "Spirochaetota", "Synergistota", "Verrucomicrobiota")
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroquinone = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroquinone = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff", Actinobacteriota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Cyanobacteria = "#9932ccff", Deferribacterota = "#ffd700ff", Desulfobacterota = "#a3dd57ff", Elusimicrobiota = "#e0eee0ff", Eremiobacterota = "#eee685ff", Methanobacteriota = "#ffb6c1ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", RUG730 = "#8b864eff", Spirochaetota = "#b03060ff", Synergistota = "#d0b100ff", Verrucomicrobiota  = "#636363ff")
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroquinone = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroquinone = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `MMetagenome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(Actinobacteriota = "#428953ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Cyanobacteria = "#9932ccff", Deferribacterota = "#ffd700ff", Desulfobacterota = "#a3dd57ff", Elusimicrobiota = "#e0eee0ff", Eremiobacterota = "#eee685ff", Methanobacteriota = "#ffb6c1ff", Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", Pseudomonadota = "#0000ffff", RUG730 = "#8b864eff", Spirochaetota = "#b03060ff", Synergistota = "#d0b100ff", Verrucomicrobiota  = "#636363ff")
+                                  
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(MAG_SM_Glo2, annotationTrack = "grid", order = order, preAllocateTracks = 1, grid.col = grid.col, grid.border = 1, transparency = 0.7, annotationTrackHeight = mm_h(5))
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.4, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+
+
+# re-set circos parameters
+circos.clear() 
+
+```
+
+
+
+
+
+**MAGs: Family level metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+
+## For E. pulchripes
+E30_Abundance_Phyla_KO$Lib.Function <- paste(E30_Abundance_Phyla_KO$Library.type, E30_Abundance_Phyla_KO$Function, sep="_")
+
+E30_Abundance_Phyla_KO %>%
+  subset(Epibolus == "Yes") %>%
+  group_by(Lib.Function, Family) %>%
+  summarize(DE = sum(TPM/10^6), .groups = 'drop') %>%
+  group_by(Lib.Function) %>%
+  arrange(Lib.Function, desc(DE)) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank <= 2) %>%
+  ungroup() %>%
+  subset(select = c("Lib.Function", "Family", "DE")) ->
+  MAG_SM_Epi3
+
+
+
+order <- c("Metatranscriptome_Lignin", "Metatranscriptome_Oxalate", "Metatranscriptome_Tannin", "Metatranscriptome_Benzoate", "Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Benzoyl-CoA", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metagenome_Lignin", "Metagenome_Oxalate", "Metagenome_Tannin", "Metagenome_Benzoate", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Benzoyl-CoA", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Burkholderiaceae", "Enterobacteriaceae", "Microbacteriaceae", "Rhizobiaceae", "Rhodocyclaceae", "Desulfovibrionaceae", "CAG-74", "Cellulomonadaceae", "Ruminococcaceae", "Aminobacteriaceae", "Aeromonadaceae", "Sphingomonadaceae", "Magnetospirillaceae", "Acetobacteraceae", "Beijerinckiaceae", "Azospirillaceae", "WRBF01", "Anaerovoracaceae", "Anaplasmataceae", "Oscillospiraceae", "Unclassified")
+
+
+order1 <- c("Metatranscriptome_Lignin", "Metatranscriptome_Oxalate", "Metatranscriptome_Tannin", "Metatranscriptome_Benzoate", "Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Benzoyl-CoA", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metagenome_Lignin", "Metagenome_Oxalate", "Metagenome_Tannin", "Metagenome_Benzoate", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Benzoyl-CoA", "Metagenome_Protocatechuate", "Metagenome_Gentisate")
+
+order2 <- c("Burkholderiaceae", "Enterobacteriaceae", "Microbacteriaceae", "Rhizobiaceae"," Rhodocyclaceae", "Desulfovibrionaceae", "CAG-74", "Cellulomonadaceae", "Ruminococcaceae", "Aminobacteriaceae", "Aeromonadaceae", "Sphingomonadaceae", "Magnetospirillaceae", "Acetobacteraceae", "Beijerinckiaceae", "Azospirillaceae", "WRBF01", "Anaerovoracaceae", "Anaplasmataceae", "Oscillospiraceae", "Unclassified")
+
+grid.col = c(Metatranscriptome_Lignin = "#428953ff", Metatranscriptome_Oxalate = "#ce2929ff", Metatranscriptome_Tannin = "#a3dd57ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff", Metagenome_Lignin = "#428953ff", Metagenome_Oxalate = "#ce2929ff", Metagenome_Tannin = "#a3dd57ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", `Metagenome_Benzoyl-CoA`  = "#eecfa1ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Burkholderiaceae = "#9acd32ff", Enterobacteriaceae = "#ee82eeff", Microbacteriaceae = "#708090ff", Rhizobiaceae = "#f4a460ff", Rhodocyclaceae = "#b0e0e6ff", Desulfovibrionaceae = "#8b4513ff", `CAG-74` = "#f4a460ff", Cellulomonadaceae = "#000080ff", Ruminococcaceae = "#4169e1ff", Aminobacteriaceae = "#00c5cdff", Aeromonadaceae = "#48d1ccff", Sphingomonadaceae = "#fdf5e6ff", Magnetospirillaceae = "#778899ff", Acetobacteraceae = "#f08080ff", Beijerinckiaceae = "#9acd32ff", Azospirillaceae = "#8b0000ff", WRBF01 = "#00ced1ff", Anaerovoracaceae = "#8b2252ff", Anaplasmataceae = "#006663ff", Oscillospiraceae = "#0b5aa8ff", Unclassified = "#3cb371ff")
+
+
+grid.col1 = c(Metatranscriptome_Lignin = "#428953ff", Metatranscriptome_Oxalate = "#ce2929ff", Metatranscriptome_Tannin = "#a3dd57ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff", Metagenome_Lignin = "#428953ff", Metagenome_Oxalate = "#ce2929ff", Metagenome_Tannin = "#a3dd57ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", `Metagenome_Benzoyl-CoA`  = "#eecfa1ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff")
+
+grid.col2 = c(Burkholderiaceae = "#9acd32ff", Enterobacteriaceae = "#ee82eeff", Microbacteriaceae = "#708090ff", Rhizobiaceae = "#f4a460ff", Rhodocyclaceae = "#b0e0e6ff", Desulfovibrionaceae = "#8b4513ff", `CAG-74` = "#f4a460ff", Cellulomonadaceae = "#000080ff", Ruminococcaceae = "#4169e1ff", Aminobacteriaceae = "#00c5cdff", Aeromonadaceae = "#48d1ccff", Sphingomonadaceae = "#fdf5e6ff", Magnetospirillaceae = "#778899ff", Acetobacteraceae = "#f08080ff", Beijerinckiaceae = "#9acd32ff", Azospirillaceae = "#8b0000ff", WRBF01 = "#00ced1ff", Anaerovoracaceae = "#8b2252ff", Anaplasmataceae = "#006663ff", Oscillospiraceae = "#0b5aa8ff", Unclassified = "#3cb371ff")
+                                  
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(MAG_SM_Epi3, annotationTrack = "grid", order = order, preAllocateTracks = 1, grid.col = grid.col, grid.border = 1, transparency = 0.7, annotationTrackHeight = mm_h(5))
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = 0.9, y = -0.1, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Family", title.adj = 0.1) 
+
+
+# re-set circos parameters
+circos.clear()  
+
+
+
+
+
+
+## For G. connexa
+E30_Abundance_Phyla_KO$Lib.Function <- paste(E30_Abundance_Phyla_KO$Library.type, E30_Abundance_Phyla_KO$Function, sep="_")
+
+E30_Abundance_Phyla_KO %>%
+  subset(Glomeris == "Yes") %>%
+  group_by(Lib.Function, Family) %>%
+  summarize(DE = sum(TPM/10^6), .groups = 'drop') %>%
+  group_by(Lib.Function) %>%
+  arrange(Lib.Function, desc(DE)) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank <= 2) %>%
+  ungroup() %>%
+  subset(select = c("Lib.Function", "Family", "DE")) ->
+  MAG_SM_Glo3
+
+
+
+order <- c("Metatranscriptome_Lignin", "Metatranscriptome_Oxalate", "Metatranscriptome_Tannin", "Metatranscriptome_Benzoate", "Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Benzoyl-CoA", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metagenome_Lignin", "Metagenome_Oxalate", "Metagenome_Tannin", "Metagenome_Benzoate", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Benzoyl-CoA", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Burkholderiaceae", "Enterobacteriaceae", "Microbacteriaceae", "Rhizobiaceae", "Rhodocyclaceae", "Desulfovibrionaceae", "CAG-74", "Cellulomonadaceae", "Ruminococcaceae", "Aminobacteriaceae", "Aeromonadaceae", "Sphingomonadaceae", "Magnetospirillaceae", "Acetobacteraceae", "Beijerinckiaceae", "Azospirillaceae", "WRBF01", "Anaerovoracaceae", "Anaplasmataceae", "Oscillospiraceae", "Unclassified")
+
+
+order1 <- c("Metatranscriptome_Lignin", "Metatranscriptome_Oxalate", "Metatranscriptome_Tannin", "Metatranscriptome_Benzoate", "Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Benzoyl-CoA", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metagenome_Lignin", "Metagenome_Oxalate", "Metagenome_Tannin", "Metagenome_Benzoate", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Benzoyl-CoA", "Metagenome_Protocatechuate", "Metagenome_Gentisate")
+
+order2 <- c("Burkholderiaceae", "Enterobacteriaceae", "Microbacteriaceae", "Rhizobiaceae"," Rhodocyclaceae", "Desulfovibrionaceae", "CAG-74", "Cellulomonadaceae", "Ruminococcaceae", "Aminobacteriaceae", "Aeromonadaceae", "Sphingomonadaceae", "Magnetospirillaceae", "Acetobacteraceae", "Beijerinckiaceae", "Azospirillaceae", "WRBF01", "Anaerovoracaceae", "Anaplasmataceae", "Oscillospiraceae", "Unclassified")
+
+grid.col = c(Metatranscriptome_Lignin = "#428953ff", Metatranscriptome_Oxalate = "#ce2929ff", Metatranscriptome_Tannin = "#a3dd57ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff", Metagenome_Lignin = "#428953ff", Metagenome_Oxalate = "#ce2929ff", Metagenome_Tannin = "#a3dd57ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", `Metagenome_Benzoyl-CoA`  = "#eecfa1ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Burkholderiaceae = "#9acd32ff", Enterobacteriaceae = "#ee82eeff", Microbacteriaceae = "#708090ff", Rhizobiaceae = "#f4a460ff", Rhodocyclaceae = "#b0e0e6ff", Desulfovibrionaceae = "#8b4513ff", `CAG-74` = "#f4a460ff", Cellulomonadaceae = "#000080ff", Ruminococcaceae = "#4169e1ff", Aminobacteriaceae = "#00c5cdff", Aeromonadaceae = "#48d1ccff", Sphingomonadaceae = "#fdf5e6ff", Magnetospirillaceae = "#778899ff", Acetobacteraceae = "#f08080ff", Beijerinckiaceae = "#9acd32ff", Azospirillaceae = "#8b0000ff", WRBF01 = "#00ced1ff", Anaerovoracaceae = "#8b2252ff", Anaplasmataceae = "#006663ff", Oscillospiraceae = "#0b5aa8ff", Unclassified = "#3cb371ff")
+
+
+grid.col1 = c(Metatranscriptome_Lignin = "#428953ff", Metatranscriptome_Oxalate = "#ce2929ff", Metatranscriptome_Tannin = "#a3dd57ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff", Metagenome_Lignin = "#428953ff", Metagenome_Oxalate = "#ce2929ff", Metagenome_Tannin = "#a3dd57ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", `Metagenome_Benzoyl-CoA`  = "#eecfa1ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff")
+
+grid.col2 = c(Burkholderiaceae = "#9acd32ff", Enterobacteriaceae = "#ee82eeff", Microbacteriaceae = "#708090ff", Rhizobiaceae = "#f4a460ff", Rhodocyclaceae = "#b0e0e6ff", Desulfovibrionaceae = "#8b4513ff", `CAG-74` = "#f4a460ff", Cellulomonadaceae = "#000080ff", Ruminococcaceae = "#4169e1ff", Aminobacteriaceae = "#00c5cdff", Aeromonadaceae = "#48d1ccff", Sphingomonadaceae = "#fdf5e6ff", Magnetospirillaceae = "#778899ff", Acetobacteraceae = "#f08080ff", Beijerinckiaceae = "#9acd32ff", Azospirillaceae = "#8b0000ff", WRBF01 = "#00ced1ff", Anaerovoracaceae = "#8b2252ff", Anaplasmataceae = "#006663ff", Oscillospiraceae = "#0b5aa8ff", Unclassified = "#3cb371ff")
+                                  
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(MAG_SM_Glo3, annotationTrack = "grid", order = order, preAllocateTracks = 1, grid.col = grid.col, grid.border = 1, transparency = 0.7, annotationTrackHeight = mm_h(5))
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = 0.9, y = -0.1, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Family", title.adj = 0.1) 
+
+
+# re-set circos parameters
+circos.clear()  
+```
+
+
+
+
+# Assembled metagenomic and metatranscriptomic reads
+
+**Lignin-degrading genes in metagenome and metatranscriptome**
+```{r load Lignin community, cache = T}
+# Load taxa for lignin
+read_ods("Detooxification_MAGs.ods", sheet = "Taxa_Comm_Lignin_MGMT", col_names = TRUE)  -> 
+Taxa_Comm_Lignin_MGMT
+
+# Load the community gene abundance (TPM)
+read_ods("Detooxification_MAGs.ods", sheet = "TPM_Comm_Lignin_MGMT", col_names = TRUE)  -> 
+TPM_Comm_Lignin_MGMT
+
+# Load KO
+read_ods("Detooxification_MAGs.ods", sheet = "KO_Comm_Lignin_MGMT", col_names = TRUE)  -> 
+KO_Comm_Lignin_MGMT
+
+
+# Merge taxa and abundance
+Taxa_Comm_Lignin_MGMT_Abundance <- Taxa_Comm_Lignin_MGMT %>% inner_join(TPM_Comm_Lignin_MGMT, by=c("Species.type", "Lib.type", "Contigs.name", "Contigs", "UniProtKB"), multiple = "all", relationship = "many-to-many") %>% drop_na(Phylum)
+
+# Merge Ko, taxa and abundance
+Taxa_Comm_Lignin_MGMT_Abundance_code <- KO_Comm_Lignin_MGMT %>% right_join(Taxa_Comm_Lignin_MGMT_Abundance, by=c("UniProtKB"), multiple = "all", relationship = "many-to-many") #%>% drop_na(Contigs)
+
+write.csv(Taxa_Comm_Lignin_MGMT_Abundance_code, "Taxa_Comm_Lignin_MGMT_Abundance_code.csv")
+```
+
+**Lignin-degrading gene plotiing**
+```{r load Lignin community, cache = T}
+
+# ligColour = c(AA0  = "#CC5F00FF", AA1 = "#FF00FF", AA2 = "peachpuff3", AA3 = "mediumorchid2", AA4 = "#428953", AA5 = "#5675D6", AA6 = "#CE2929", AA7 = "#000080", AA9 = "#FAF0E6", AA10 = "#800000", AA12 = "#00FF00")
+
+grid.col2 = c(`Candidatus Bathyarchaeota` = "#FD49BB", Euryarchaeota = "#ffb6c1ff", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  `Deinococcus-Thermus` = "#C67188", Desulfobacteriota = "#a3dd57ff", Synergistota = "#d0b100ff", Myxococcota = "#5675d6ff", `Unclassified bacteria` = "#193300", Ascomycota ="#FF6666", Arthropoda ="#FFFF33")
+
+# Genes
+Taxa_Comm_Lignin_MGMT_Abundance_code %>%
+subset(TPM >0) %>% 
+group_by(Species.type, Lib.type, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA0", "AA1", "AA2", "AA3", "AA4", "AA5", "AA6", "AA7", "AA9", "AA10", "AA12"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Species.type, Lib.type) %>%
+mutate(Percent = DE/sum(DE)*100) %>%
+group_by(Species.type, Lib.type) ->
+lignin_MGMT
+
+write.csv(lignin_MGMT, "Comm_Lignin_gene_abundance_MGMT.csv")
+
+# Percentage abundance at phylum level
+Taxa_Comm_Lignin_MGMT_Abundance_code %>%
+subset(TPM >0) %>% 
+group_by(Species.type, Lib.type, Gene.abbreviation, Phylum) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA0", "AA1", "AA2", "AA3", "AA4", "AA5", "AA6", "AA7", "AA9", "AA10", "AA12"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Species.type, Lib.type) %>%
+mutate(Percent = DE/sum(DE)*100) %>%
+group_by(Species.type, Lib.type) ->
+lignin_MGMT_phylum
+
+write.csv(lignin_MGMT_phylum, "Comm_Lignin_gene_abundance_Phylum_MGMT.csv")
+
+
+# Phylum
+Taxa_Comm_Lignin_MGMT_Abundance_code %>%
+subset(TPM >0) %>% 
+group_by(Species.type, Lib.type, Gene.abbreviation, Phylum) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("AA0", "AA1", "AA2", "AA3", "AA4", "AA5", "AA6", "AA7", "AA9", "AA10", "AA12"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Function") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Comm_Lignin_gene_abundance_Phylum_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+# Family
+
+grid.col2 = c(Cystobacterineae = "#8B8B00", Pseudomonadaceae  = "#e00272ff", Oscillospiraceae = "#FF6347", Geobacteraceae = "#008B45", Sphaerotilaceae = "#8B4726", Micrococcaceae = "#000080", Zoogloeaceae = "#5675d6ff", Sphingomonadaceae = "#6A5ACD", Nocardioidaceae = "#800080", Rhodocyclaceae = "#C0C0C0", Mycobacteriaceae = "#9400D3", Azospirillaceae = "#0000FF", Aeromonadaceae = "#8B6969", Xanthomonadaceae = "#8B2500",  `unclassified Flavobacteriales` = "#548B54")         
+                               
+
+Taxa_Comm_Lignin_MGMT_Abundance_code %>%
+subset(TPM >0) %>%
+group_by(Species.type, Lib.type, Family) %>%
+summarise(DE = sum(TPM/10^5), .groups = 'drop') %>%
+group_by(Species.type, Lib.type) %>%
+arrange(Species.type,  Lib.type,  desc(DE)) %>%
+mutate(rank = row_number()) %>%
+filter(rank <= 5) %>%
+mutate(Family = factor(Family, levels = c("Cystobacterineae", "Pseudomonadaceae", "Oscillospiraceae", "Geobacteraceae", "Sphaerotilaceae", "Micrococcaceae", "Zoogloeaceae", "Sphingomonadaceae", "Nocardioidaceae", "Rhodocyclaceae", "Mycobacteriaceae","Azospirillaceae", "Aeromonadaceae", "Xanthomonadaceae",  "unclassified Flavobacteriales"))) %>%
+ungroup() %>%
+
+ggplot() + theme_bw() + geom_linerange(aes(y = Species.type, xmin = 0, xmax = DE, colour =  Family), position = position_dodge(width = 1)) +
+geom_point(aes(y = Species.type, x = DE, colour = Family), size = 15, position = position_dodge(width = 1)) +
+ylab("Species.type") +  xlab("Relative abundance (TPM*10^5)") +
+scale_colour_manual(values = grid.col2) +
+theme(axis.text=element_text(size=30, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 24),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) +
+facet_grid( ~ Lib.type) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("Lignin_genes_lib_Family_MGMT.svg", width = 60, height = 25, units = "cm")
+```
+
+
+
+
+
+#Intermediate metabolites:  Assembled metagenomic and metatranscriptomic reads
+**Load data**
+```{r load SM plotting, cache = T}
+# Load the community taxa
+read_ods("Detooxification_MAGs.ods", sheet = "Community_Gene_Taxa", col_names = TRUE)  -> 
+Community_Gene_Taxa
+
+# Load the community gene abundance (TPM)
+read_ods("Detooxification_MAGs.ods", sheet = "Community_Gene_Abundance", col_names = TRUE)  -> 
+Community_Gene_Abundance
+
+# Load KO
+read_ods("Detooxification_MAGs.ods", sheet = "KO", col_names = TRUE)  -> 
+KO
+
+
+# Merge taxa and abundance
+Community_Gene_Taxa_Abundance <- Community_Gene_Taxa %>% inner_join(Community_Gene_Abundance, by=c("Species.type", "Lib.type", "Contigs"), multiple = "all", relationship = "many-to-many") %>% drop_na(TPM)
+
+# Merge Ko, taxa and abundance
+Community_Gene_Taxa_Abundance_KO <- Community_Gene_Taxa_Abundance %>% inner_join(KO, by=c("UniProtKB"), multiple = "all", relationship = "many-to-many") #%>% drop_na(Contigs)
+
+write.csv(Community_Gene_Taxa_Abundance_KO, "EpiGlo_Detoxification_genes_Community_abundance.csv")
+
+```
+
+
+**The number and abundance of genes in MG and MT from E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+# Number of genes in E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(Counts = n()) %>%
+group_by(Lib.type) %>%
+mutate(Percent = Counts / sum(Counts) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+# Number of genes in G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(Counts = n()) %>%
+group_by(Lib.type) %>%
+mutate(Percent = Counts / sum(Counts) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+
+# For peroxidases and superoxides for Epibolus and Glomeris
+Community_Gene_Taxa_Abundance_KO %>%
+#subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Hydrogen peroxide", "Superoxide")) %>%
+group_by(Species.type, Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Hydrogen peroxide", "Superoxide"))) %>%
+reframe(Counts = n()) %>%
+group_by(Lib.type) %>%
+mutate(Percent = Counts / sum(Counts) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Counts)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+
+# Abundance of genes in E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+# Abundance of genes in G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+# Phylum: For peroxidases and superoxides for Epibolus and Glomeris
+Community_Gene_Taxa_Abundance_KO %>%
+#subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Hydrogen peroxide", "Superoxide")) %>%
+group_by(Species.type, Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Hydrogen peroxide", "Superoxide"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Species.type, Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Species.type, Lib.type, Function) %>%
+arrange(Function, .by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+# Family: For peroxidases and superoxides for Epibolus and Glomeris
+Community_Gene_Taxa_Abundance_KO %>%
+#subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Hydrogen peroxide", "Superoxide")) %>%
+group_by(Species.type, Lib.type, Function, Family) %>%
+mutate(Function = factor(Function, levels = c("Hydrogen peroxide", "Superoxide"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Species.type, Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Species.type, Lib.type, Function) %>%
+arrange(Function, .by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+
+
+
+# Phylum plot: For peroxidases and superoxides for Epibolus and Glomeris
+
+grid.col2 <- c(`Candidatus Thermoplasmatota` = "#FF6347", Euryarchaeota = "#ffb6c1ff", Actinomycetota = "#428953ff", Acidobacteria = "#eecfa1ff", Bacillota = "#77e599ff", Bacteroidota = "#ce2929ff", Chlorobi = "darkgoldenrod4", Chloroflexota = "#009999", Cyanobacteriota = "#9932ccff", `Deinococcus-Thermus` = "#C67188", Zixibacteria = "#EE7600", Nitrospirota = "#CD1076", Chrysiogenetes = "#1874CD", `Unclassified bacteria` = "#193300", Ascomycota = "#CD5C5C", Oomycota = "#CD3700", Chlorophyta = "#FFFF00", Euglenozoa = "#a0522dff", Metamonada = "#CD4F39", Arthropoda ="#FFFF33")
+
+
+Community_Gene_Taxa_Abundance_KO %>%
+#subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Hydrogen peroxide", "Superoxide")) %>%
+group_by(Species.type, Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Hydrogen peroxide", "Superoxide"))) %>%
+mutate(Phylum = factor(Phylum, levels = c("Candidatus Thermoplasmatota", "Euryarchaeota", "Actinomycetota", "Acidobacteria", "Bacillota", "Bacteroidota", "Chlorobi", "Chloroflexota", "Cyanobacteria", "Deinococcus-Thermus", "Zixibacteria", "Nitrospirota", "Chrysiogenetes", "Unclassified bacteria", "Ascomycota", "Oomycota", "Chlorophyta", "Euglenozoa", "Metamonada", "Arthropoda"))) %>%
+group_by(Species.type, Lib.type, Function, Phylum) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Species.type, Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) ->
+
+PerSup_EpiGlo
+ 
+PerSup_EpiGlo%>% 
+group_by(Species.type, Lib.type, Function) %>% 
+arrange(.by_group = TRUE, desc(Percent)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+PerSup_EpiGlo %>%
+ggplot(aes(y = Species.type, x = DE, fill = Phylum)) + ylab("Cytochrome P450") + xlab("Relative abundance (%)") +
+geom_bar(position="fill", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+facet_grid(Function ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24)) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("EpiGlo_Hydrogen_peroxide_vs_Superoxide_genes_Phylum_MGMT.svg", width = 40, height = 40, units = "cm")
+
+
+
+# Family
+Community_Gene_Taxa_Abundance_KO %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Hydrogen peroxide", "Superoxide")) %>%
+group_by(Species.type, Lib.type, Function, Family) %>%
+mutate(Function = factor(Function, levels = c("Hydrogen peroxide", "Superoxide"))) %>%
+reframe(DE = sum(TPM)/10^4)  %>%
+group_by(Species.type, Lib.type) %>%
+slice_max(order_by = DE, n = 8)->
+
+PerSup_EpiGlo_F
+ 
+PerSup_EpiGlo_F %>% 
+group_by(Species.type, Lib.type, Function) %>% 
+arrange(.by_group = TRUE, desc(DE)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+  
+
+PerSup_EpiGlo_F %>%
+ggplot() + theme_bw() + geom_linerange(aes(y = Family, xmin = 0, xmax = DE, colour = Species.type), position = position_dodge(width = 1)) +
+geom_point(aes(y = Family, x = DE, colour = Species.type), size = 8, position = position_dodge(width = 1)) +
+ylab("Species.type") +  xlab("Relative abundance (TPM*10^4)") +
+scale_x_continuous(breaks = c(10, 20, 30, 40, 50), limits = c(0,50), expand = c(0, 0)) +
+theme(axis.text=element_text(size=30, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 24),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) +
+facet_grid(Function ~ Lib.type) +
+guides(fill = guide_legend(ncol = 1))
+
+ggsave("EpiGlo_Hydrogen_peroxide_vs_Superoxide_genes_Family_MGMT.svg", width = 40, height = 40, units = "cm")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+**Community gene/transcript abundance: Summary of gene abundance at phylum level in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+grid.col2 = c(`Candidatus Bathyarchaeota` = "#FD49BB", Euryarchaeota = "#ffb6c1ff", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  `Deinococcus-Thermus` = "#C67188", Desulfobacteriota = "#a3dd57ff", Synergistota = "#d0b100ff", Myxococcota = "#5675d6ff", `Unclassified bacteria` = "#193300", Ascomycota ="#FF6666", Arthropoda ="#FFFF33")
+
+
+
+# Catechol
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Catechol-ortho" | Function == "Catechol-meta") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("catA", "catB", "catC", "catR", "pcaD", "pcaL", "pcaI", "pcaJ", "pcaF", "fadA", "fadI", "xylE", "catE", "xylG", "xylH", "xylI", "xylF", "xylJ", "mhpD", "xylK", "mhpE", "xylQ", "mhpF"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Catechol") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24)) 
+
+
+ggsave("Catechol_genes_MGMT.svg", width = 70, height = 30, units = "cm")
+
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Catechol-ortho" | Function == "Catechol-meta") %>%
+group_by(Lib.type, Species.type, Function) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+
+# Protocatechuate
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Protocatechuate") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("pobA", "pobB", "pcaH", "pcaG", "pcaB", "pcaC", "pcaD", "pcaI", "pcaJ", "pcaF"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Protocatechuate") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Protocatechuate_genes_MGMT.svg", width = 50, height = 25, units = "cm")
+
+
+# Gentisate
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Gentisate") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("mhbD", "mhbl", "mhbH", "mobA"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Gentisate") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Gentisate_genes_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+# Gallate, pyrogallol, hydroquinone and hydroxyquinol
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol")) %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("galA", "galD", "galB", "galC", "galP", "galT", "galR", "athL", "bthL", "pgrcl", "dpgC", "linE", "hapE", "chqB", "macA"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Gallate") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("GallatePHH_genes_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+
+
+
+
+# Oxalate
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Oxalate") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("frc", "oxc", "oxdD", "oxlT", "uctC", "yfdE", "oorA", "oorB", "oorD", "AAE3"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Oxalate") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Oxalate_genes_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+
+
+
+# Tannin
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Tannin") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("tanA", "tanB", "ubiX", "lpdB", "lpdC", "lpdD", "tanL"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Tannin") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Tannin_genes_MGMT.svg", width = 40, height = 25, units = "cm")
+
+
+
+
+
+# Benzoate and Benzoyl-CoA
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+subset(Function == "Benzoate" | Function == "Benzoyl-CoA") %>%
+group_by(Lib.type, Species.type, Phylum, Gene.abbreviation) %>%
+mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("benA-xylX", "benA", "benB-xylY", "benB", "benC-xylZ", "benC", "benD-xylL", "benD", "bcrC", "bcrB", "bcrA", "bcrD", "bamB", "bamC", "dch", "had", "oah"))) %>%
+#mutate(Gene.abbreviation = factor(Gene.abbreviation, levels = c("Oxalate", "Tannin", "Benzoate", "Catechol−ortho", "Catechol−meta", "Benzoyl−CoA", "Protocatechuate"))) %>%
+reframe(DE = sum(TPM)/10e4) %>%
+ggplot(aes(x = Gene.abbreviation, y = DE, fill = Phylum)) + xlab("Benzoate_and_Benzoyl-CoA") + ylab("Relative abundance (TPM*10^4)") +
+geom_bar(position="stack", stat = "identity") +  theme_bw() + 
+theme(axis.text=element_text(size=24, colour="black"), axis.ticks=element_line(size=0.8), axis.title = element_text(size = 24)) +
+#scale_y_continuous(label=scientific_10) +
+facet_grid(Species.type ~ Lib.type) + scale_fill_manual(values = grid.col2) +
+theme(legend.position="right", strip.text.x = element_text(size=26)) + 
+theme(legend.text = element_text(colour="black", size = 24), axis.text.x=element_text(size=24, hjust = 1, vjust = 0.5, angle = 90, colour="black"), axis.title=element_text(size=24), legend.title = element_text(size = 24))
+
+ggsave("Benzoate_and_Benzoyl-CoA_genes_MGMT.svg", width = 70, height = 25, units = "cm")
+```
+
+
+
+
+
+
+**Community metabolite: Summary of gene abundance at phylum level in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+# Abundance of genes at Phylum level in E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+#  Abundance of genes at Phylum level in G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+# Contribution of each phylum to gene abundance in E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type, Function) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+#  Contribution of each phylum to gene abundance in G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function, Phylum) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type, Function) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+
+
+
+
+# Contribution of each Family to gene abundance in E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "E. pulchripes") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function, Family) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type, Function) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+#  Contribution of each Family to gene abundance in G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(Species.type == "G. connexa") %>%
+subset(TPM >0) %>%
+filter(Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function, Family) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM)) %>%
+group_by(Lib.type, Function) %>%
+mutate(Percent = DE / sum(DE) * 100) %>%
+group_by(Lib.type, Function) %>%
+arrange(.by_group = TRUE, desc(Percent)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+```
+
+
+
+**Community metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+grid.col = c(`Catechol-ortho` = "#5675d6ff", `Catechol-meta` = "#9400d3ff", Protocatechuate = "#65ecefff", Gentisate = "#ff8b07ff", Gallate = "#428953ff", Pyrogallol = "#ce2929ff", Hydroquinone = "#a3dd57ff",  Hydroxyquinol = "#826d00ff", Benzoate = "#77e599ff", `Benzoyl-CoA` = "#eecfa1ff")
+
+
+# For E. pulchripes
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+filter(Species.type == "E. pulchripes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE/sum(DE)*100) %>%
+
+ggplot() + theme_bw() + geom_linerange(aes(x = Function, ymin = 0, ymax = Percent, colour = Function), size =4, position = position_dodge(width = 1)) +
+geom_point(aes(x = Function, y = Percent, colour = Function), size = 15, position = position_dodge(width = 1)) +
+xlab("Metabolites") +  ylab("Relative abundance (%)") +
+scale_y_continuous(breaks = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100), limits = c(0,100), expand = c(0, 0)) +
+scale_colour_manual(values = grid.col) +
+facet_wrap(~Lib.type, ncol = 1) +
+theme(axis.text=element_text(size=28, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 30),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24)) 
+
+ggsave("Epi_Lib_intermediate_metabolites_MGMT.svg",width = 25, height = 25, units = "cm")
+
+
+# For G. connexa
+Community_Gene_Taxa_Abundance_KO %>%
+subset(TPM >0) %>%
+filter(Species.type == "G. connexa", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+group_by(Lib.type, Function) %>%
+mutate(Function = factor(Function, levels = c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA"))) %>%
+reframe(DE = sum(TPM))  %>%
+group_by(Lib.type) %>%
+mutate(Percent = DE/sum(DE)*100) %>%
+
+ggplot() + theme_bw() + geom_linerange(aes(x = Function, ymin = 0, ymax = Percent, colour = Function), size =4, position = position_dodge(width = 1)) +
+geom_point(aes(x = Function, y = Percent, colour = Function), size = 15, position = position_dodge(width = 1)) +
+xlab("Metabolites") +  ylab("Relative abundance (%)") +
+scale_y_continuous(breaks = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100), limits = c(0,100), expand = c(0, 0)) +
+scale_colour_manual(values = grid.col) +
+facet_wrap(~Lib.type, ncol = 1) +
+theme(axis.text=element_text(size=28, colour="black"), axis.ticks=element_line(size=1), axis.title = element_text(size = 30),  legend.title = element_text(size = 28), strip.text.x = element_text(size=26), legend.text = element_text(colour="black", size = 24))  
+
+ggsave("Glo_Lib_intermediate_metabolites_MGMT.svg",width = 25, height = 25, units = "cm")
+
+```
+
+
+
+
+
+
+**Phylum level metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+
+## For E. pulchripes
+Community_Gene_Taxa_Abundance_KO$Lib.Function <- paste(Community_Gene_Taxa_Abundance_KO$Lib.type, Community_Gene_Taxa_Abundance_KO$Function, sep="_")
+
+Community_Gene_Taxa_Abundance_KO %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+filter(Species.type == "E. pulchripes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+subset(TPM >0) %>%
+group_by(Lib.Function, Phylum) %>%
+summarise(DE = sum(TPM/10^6), .groups = 'drop') %>%
+group_by(Lib.Function) %>%
+arrange(Lib.Function, desc(DE)) %>%
+mutate(rank = row_number()) %>%
+filter(rank <= 5) %>%
+ungroup() %>%
+#subset(DE > 0.5) %>%
+subset(select = c("Lib.Function", "Phylum", "DE")) ->
+Comm_SM_Epi2
+
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Candidatus Bathyarchaeota", "Euryarchaeota", "Thaumarchaeota", "Pseudomonadota", "Actinomycetota", "Bacteroidota", "Bacillota", "Desulfobacteriota", "Myxococcota",  "Deinococcus-Thermus", "Candidatus Bipolaricaulota", "Unclassified bacteria", "Uroviricota", "Ascomycota")
+                                                                 
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Candidatus Bathyarchaeota", "Euryarchaeota", "Thaumarchaeota", "Pseudomonadota", "Actinomycetota", "Bacteroidota", "Bacillota", "Desulfobacteriota", "Myxococcota",  "Deinococcus-Thermus", "Candidatus Bipolaricaulota", "Unclassified bacteria", "Uroviricota", "Ascomycota")
+
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff", `Candidatus Bathyarchaeota` = "#FD49BB", Euryarchaeota = "#ffb6c1ff", Thaumarchaeota ="#FFFF33", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  Desulfobacteriota = "#a3dd57ff", Myxococcota = "#5675d6ff", `Deinococcus-Thermus` = "#C67188", `Candidatus Bipolaricaulota` = "#F0E68C", `Unclassified bacteria` = "#193300", Uroviricota = "#8B6969", Ascomycota ="#FF6666")
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(`Candidatus Bathyarchaeota` = "#FD49BB", Euryarchaeota = "#ffb6c1ff", Thaumarchaeota ="#FFFF33", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  Desulfobacteriota = "#a3dd57ff", Myxococcota = "#5675d6ff", `Deinococcus-Thermus` = "#C67188", `Candidatus Bipolaricaulota` = "#F0E68C", `Unclassified bacteria` = "#193300", Uroviricota = "#8B6969", Ascomycota ="#FF6666")
+                                  
+
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(Comm_SM_Epi2, order = order, grid.col = grid.col, transparency = 0.8, annotationTrack = "grid",  preAllocateTracks = 1, annotationTrackHeight = c(0.08, 0.05), directional=1, direction.type = c("diffHeight", "arrows"), link.arr.type = "big.arrow",  diffHeight = -uh(1, "mm"),  h.ratio = 0.8, link.lwd = 1, link.lty = 1, link.border="gray35")
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.2, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+
+# Metagenome
+highlight.sector(Comm_SM_Epi2$Lib.Function[which(Comm_SM_Epi2$Lib.Function == "Metagenome_Catechol-ortho" | Comm_SM_Epi2$Lib.Function ==  "Metagenome_Catechol-meta" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Protocatechuate" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Gentisate" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Gallate" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Pyrogallol" | Comm_SM_Epi2$Lib.Function == "Metagenome_Hydroquinone" | Comm_SM_Epi2$Lib.Function ==  "Metagenome_Hydroxyquinol" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Benzoate" | Comm_SM_Epi2$Lib.Function ==   "Metagenome_Benzoyl-CoA")], track.index = 1, col = "#AE4371", padding = c(-.2, 0, -.3, 0), text = "Metagenome", cex = 0.8, text.col = "black", niceFacing = TRUE)
+
+
+
+# Metatranscriptome
+highlight.sector(Comm_SM_Epi2$Lib.Function[which(Comm_SM_Epi2$Lib.Function == "Metatranscriptome_Catechol-ortho" | Comm_SM_Epi2$Lib.Function ==  "Metatranscriptome_Catechol-meta" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Protocatechuate" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Gentisate" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Gallate" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Pyrogallol" | Comm_SM_Epi2$Lib.Function == "Metatranscriptome_Hydroquinone" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Hydroxyquinol" | Comm_SM_Epi2$Lib.Function ==   "Metatranscriptome_Benzoate" | Comm_SM_Epi2$Lib.Function ==  "Metatranscriptome_Benzoyl-CoA")], track.index = 1, col = "#AE4371", padding = c(-.2, 0, -.3, 0), text = "Metatranscriptome", cex = 0.8, text.col = "black", niceFacing = TRUE)
+# re-set circos parameters
+circos.clear()  
+
+
+
+
+
+
+
+
+
+
+## For G. connexa
+
+Community_Gene_Taxa_Abundance_KO$Lib.Function <- paste(Community_Gene_Taxa_Abundance_KO$Lib.type, Community_Gene_Taxa_Abundance_KO$Function, sep="_")
+
+Community_Gene_Taxa_Abundance_KO %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+filter(Species.type == "G. connexa", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+subset(TPM >0) %>%
+group_by(Lib.Function, Phylum) %>%
+summarise(DE = sum(TPM/10^6), .groups = 'drop') %>%
+group_by(Lib.Function) %>%
+arrange(Lib.Function, desc(DE)) %>%
+mutate(rank = row_number()) %>%
+filter(rank <= 5) %>%
+ungroup() %>%
+#subset(DE > 0.5) %>%
+subset(select = c("Lib.Function", "Phylum", "DE")) ->
+Comm_SM_Glo2
+
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Thaumarchaeota", "Pseudomonadota", "Actinomycetota", "Cyanobacteria", "Bacteroidota", "Bacillota", "Myxococcota", "Planctomycetota", "Unclassified bacteria", "Ascomycota")
+   
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Thaumarchaeota", "Pseudomonadota", "Actinomycetota", "Cyanobacteria", "Bacteroidota", "Bacillota", "Myxococcota", "Planctomycetota", "Unclassified bacteria", "Ascomycota")
+
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff", Thaumarchaeota ="#FFFF33", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Cyanobacteria = "#9932ccff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", `Unclassified bacteria` = "#193300", Ascomycota ="#FF6666")
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(Thaumarchaeota ="#FFFF33", Pseudomonadota = "#0000ffff", Actinomycetota = "#428953ff", Cyanobacteria = "#9932ccff", Bacteroidota = "#ce2929ff", Bacillota = "#77e599ff",  Myxococcota = "#5675d6ff", Planctomycetota = "#65ecefff", `Unclassified bacteria` = "#193300", Ascomycota ="#FF6666")
+                                  
+
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(Comm_SM_Glo2, order = order, grid.col = grid.col, transparency = 0.8, annotationTrack = "grid",  preAllocateTracks = 1, annotationTrackHeight = c(0.08, 0.05), directional=1, direction.type = c("diffHeight", "arrows"), link.arr.type = "big.arrow",  diffHeight = -uh(1, "mm"),  h.ratio = 0.8, link.lwd = 1, link.lty = 1, link.border="gray35")
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.2, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+
+# Metagenome
+highlight.sector(Comm_SM_Glo2$Lib.Function[which(Comm_SM_Glo2$Lib.Function == "Metagenome_Catechol-ortho" | Comm_SM_Glo2$Lib.Function ==  "Metagenome_Catechol-meta" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Protocatechuate" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Gentisate" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Gallate" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Pyrogallol" | Comm_SM_Glo2$Lib.Function == "Metagenome_Hydroquinone" | Comm_SM_Glo2$Lib.Function ==  "Metagenome_Hydroxyquinol" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Benzoate" | Comm_SM_Glo2$Lib.Function ==   "Metagenome_Benzoyl-CoA")], track.index = 1, col = "#AE4371", padding = c(-.2, 0, -.3, 0), text = "Metagenome", cex = 0.8, text.col = "black", niceFacing = TRUE)
+
+
+
+# Metatranscriptome
+highlight.sector(Comm_SM_Glo2$Lib.Function[which(Comm_SM_Glo2$Lib.Function == "Metatranscriptome_Catechol-ortho" | Comm_SM_Glo2$Lib.Function ==  "Metatranscriptome_Catechol-meta" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Protocatechuate" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Gentisate" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Gallate" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Pyrogallol" | Comm_SM_Glo2$Lib.Function == "Metatranscriptome_Hydroquinone" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Hydroxyquinol" | Comm_SM_Glo2$Lib.Function ==   "Metatranscriptome_Benzoate" | Comm_SM_Glo2$Lib.Function ==  "Metatranscriptome_Benzoyl-CoA")], track.index = 1, col = "#AE4371", padding = c(-.2, 0, -.3, 0), text = "Metatranscriptome", cex = 0.8, text.col = "black", niceFacing = TRUE)
+# re-set circos parameters
+circos.clear()  
+
+```
+
+
+
+
+
+**Family level metabolite gene abundance in E. pulchripes and G. connexa**
+```{r load SM plotting, cache = T}
+
+## For E. pulchripes
+Community_Gene_Taxa_Abundance_KO$Lib.Function <- paste(Community_Gene_Taxa_Abundance_KO$Lib.type, Community_Gene_Taxa_Abundance_KO$Function, sep="_")
+
+Community_Gene_Taxa_Abundance_KO %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+filter(Species.type == "E. pulchripes", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+subset(TPM >0) %>%
+group_by(Lib.Function, Family) %>%
+summarise(DE = sum(TPM/10^6), .groups = 'drop') %>%
+group_by(Lib.Function) %>%
+arrange(Lib.Function, desc(DE)) %>%
+mutate(rank = row_number()) %>%
+filter(rank <= 3) %>%
+ungroup() %>%
+#subset(DE > 0.5) %>%
+subset(select = c("Lib.Function", "Family", "DE")) ->
+Comm_SM_Epi2_fam
+
+Comm_SM_Epi2_fam %>%
+  group_by(Lib.Function, Family) %>%
+arrange(.by_group = TRUE, desc(DE)) %>%
+  kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate","Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Pseudomonadaceae", "Enterobacteriaceae", "Azonexaceae", "Oscillospiraceae", "Atopobiaceae", "Unclassifed Burkholderiales", "Comamonadaceae", "Microbacteriaceae", "Paracoccaceae", "Micrococcaceae", "Streptomycetaceae",  "Bogoriellaceae", "Phyllobacteriaceae", "Nocardioidaceae", "Eggerthellaceae", "Pseudonocardiaceae", "Veillonellaceae", "Azospirillaceae", "Rhodocyclaceae", "Cellulomonadaceae", "Ornithinimicrobiaceae", "Botryosphaeriaceae", "Mycobacteriaceae", "Unclassified bacteria")
+
+                                                               
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate","Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Pseudomonadaceae", "Enterobacteriaceae", "Azonexaceae", "Oscillospiraceae", "Atopobiaceae", "Unclassifed Burkholderiales", "Comamonadaceae", "Microbacteriaceae", "Paracoccaceae", "Micrococcaceae", "Streptomycetaceae", "Bogoriellaceae", "Phyllobacteriaceae", "Nocardioidaceae", "Eggerthellaceae", "Pseudonocardiaceae", "Veillonellaceae", "Azospirillaceae", "Rhodocyclaceae", "Cellulomonadaceae", "Ornithinimicrobiaceae", "Botryosphaeriaceae", "Mycobacteriaceae", "Unclassified bacteria")
+
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff", Pseudomonadaceae = "#e00272ff", Enterobacteriaceae = "#39e789ff", Azonexaceae  = "#CD5C5C", Oscillospiraceae = "#FF6347", Atopobiaceae = "#00FF00", `Unclassifed Burkholderiales` = "#2E8B57", Comamonadaceae = "#E9967A", Microbacteriaceae = "#FF0000", Paracoccaceae = "#FFFF00", Micrococcaceae = "#000080", Streptomycetaceae = "#4682B4", Bogoriellaceae = "#FF00FF", Phyllobacteriaceae = "#808000", Nocardioidaceae  = "#800080", Eggerthellaceae = "#87CEFA", Pseudonocardiaceae = "#A52A2A", Veillonellaceae = "#006400", Azospirillaceae = "#0000FF", Rhodocyclaceae = "#C0C0C0", Cellulomonadaceae = "#008000", Ornithinimicrobiaceae = "#F5DEB3", Botryosphaeriaceae = "#808080", Mycobacteriaceae = "#9400D3", `Unclassified bacteria` = "#800000")
+
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metagenome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(Pseudomonadaceae = "#e00272ff", Enterobacteriaceae = "#39e789ff", Azonexaceae  = "#CD5C5C", Oscillospiraceae = "#FF6347", Atopobiaceae = "#00FF00", `Unclassifed Burkholderiales` = "#2E8B57", Comamonadaceae = "#E9967A", Microbacteriaceae = "#FF0000", Paracoccaceae = "#FFFF00", Micrococcaceae = "#000080", Streptomycetaceae = "#4682B4", Bogoriellaceae = "#FF00FF", Phyllobacteriaceae = "#808000", Nocardioidaceae  = "#800080", Eggerthellaceae = "#87CEFA", Pseudonocardiaceae = "#A52A2A", Veillonellaceae = "#006400", Azospirillaceae = "#0000FF", Rhodocyclaceae = "#C0C0C0", Cellulomonadaceae = "#008000", Ornithinimicrobiaceae = "#F5DEB3", Botryosphaeriaceae = "#808080", Mycobacteriaceae = "#9400D3", `Unclassified bacteria` = "#800000")
+                                  
+
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(Comm_SM_Epi2_fam, order = order,  grid.col = grid.col, transparency = 0.8, annotationTrack = "grid",  preAllocateTracks = 1, annotationTrackHeight = c(0.08, 0.05), directional=1, direction.type = c("diffHeight", "arrows"), link.arr.type = "big.arrow",  diffHeight = -uh(1, "mm"),  h.ratio = 0.8, link.lwd = 1, link.lty = 1, link.border="gray35")
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.2, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+
+
+
+
+
+
+
+## For G. connexa
+Community_Gene_Taxa_Abundance_KO$Lib.Function <- paste(Community_Gene_Taxa_Abundance_KO$Lib.type, Community_Gene_Taxa_Abundance_KO$Function, sep="_")
+
+Community_Gene_Taxa_Abundance_KO %>%
+filter(!(Phylum %in% c("Arthropoda"))) %>%
+filter(Species.type == "G. connexa", Function %in% c("Catechol-ortho", "Catechol-meta", "Protocatechuate", "Gentisate", "Gallate", "Pyrogallol", "Hydroquinone", "Hydroxyquinol", "Benzoate", "Benzoyl-CoA")) %>%
+subset(TPM >0) %>%
+group_by(Lib.Function, Family) %>%
+summarise(DE = sum(TPM/10^6), .groups = 'drop') %>%
+group_by(Lib.Function) %>%
+arrange(Lib.Function, desc(DE)) %>%
+mutate(rank = row_number()) %>%
+filter(rank <= 3) %>%
+ungroup() %>%
+#subset(DE > 0.5) %>%
+subset(select = c("Lib.Function", "Family", "DE")) ->
+Comm_SM_Glo2_fam
+
+
+order <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA", "Pseudomonadaceae", "Nocardioidaceae", "Pseudonocardiaceae", "Zoogloeaceae", "Azospirillaceae", "Mycobacteriaceae", "Alcaligenaceae", "Microbacteriaceae", "Conexibacteraceae", "Cellulomonadaceae", "Streptomycetaceae", "Nitrobacteraceae", "Conexivisphaeraceae", "Oscillospiraceae", "Bogoriellaceae", "Sanguibacteraceae", "Rhodospirillaceae", "Micrococcaceae", "Comamonadaceae")
+
+
+
+                                                                 
+order1 <- c("Metatranscriptome_Catechol-ortho", "Metatranscriptome_Catechol-meta", "Metatranscriptome_Protocatechuate", "Metatranscriptome_Gentisate", "Metatranscriptome_Gallate", "Metatranscriptome_Pyrogallol", "Metatranscriptome_Hydroquinone", "Metatranscriptome_Hydroxyquinol", "Metatranscriptome_Benzoate", "Metatranscriptome_Benzoyl-CoA", "Metagenome_Catechol-ortho", "Metagenome_Catechol-meta", "Metagenome_Protocatechuate", "Metagenome_Gentisate", "Metagenome_Gallate", "Metagenome_Pyrogallol", "Metagenome_Hydroquinone", "Metagenome_Hydroxyquinol", "Metagenome_Benzoate", "Metagenome_Benzoyl-CoA")
+
+order2 <- c("Pseudomonadaceae", "Nocardioidaceae", "Pseudonocardiaceae", "Zoogloeaceae", "Azospirillaceae", "Mycobacteriaceae", "Alcaligenaceae", "Microbacteriaceae", "Conexibacteraceae", "Cellulomonadaceae", "Streptomycetaceae", "Nitrobacteraceae", "Conexivisphaeraceae", "Oscillospiraceae", "Bogoriellaceae", "Sanguibacteraceae", "Rhodospirillaceae", "Micrococcaceae", "Comamonadaceae")
+
+
+
+grid.col = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", Pseudomonadaceae = "#e00272ff", Nocardioidaceae  = "#800080", Pseudonocardiaceae = "#A52A2A", Zoogloeaceae = "#5675d6ff", Azospirillaceae = "#0000FF", Mycobacteriaceae = "#9400D3", Alcaligenaceae = "#826d00ff", Microbacteriaceae = "#FF0000", Conexibacteraceae = "#65ecefff", Cellulomonadaceae = "#008000", Streptomycetaceae = "#4682B4", Nitrobacteraceae = "#eecfa1ff", Conexivisphaeraceae = "#a3dd57ff", Oscillospiraceae = "#FF6347", Bogoriellaceae = "#FF00FF", Sanguibacteraceae = "#FFFF00", Rhodospirillaceae = "#4682B4", Micrococcaceae = "#000080", Comamonadaceae = "#E9967A")
+
+
+
+
+grid.col1 = c(`Metatranscriptome_Catechol-ortho` = "#5675d6ff", `Metatranscriptome_Catechol-meta` = "#9400d3ff", Metatranscriptome_Protocatechuate = "#65ecefff", Metatranscriptome_Gentisate = "#ff8b07ff",  Metatranscriptome_Gallate = "#428953ff", Metatranscriptome_Pyrogallol = "#ce2929ff", Metatranscriptome_Hydroquinone = "#a3dd57ff", Metatranscriptome_Hydroxyquinol = "#826d00ff", Metatranscriptome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff", `Metagenome_Catechol-ortho` = "#5675d6ff", `Metagenome_Catechol-meta` = "#9400d3ff", Metagenome_Protocatechuate = "#65ecefff", Metagenome_Gentisate = "#ff8b07ff", Metagenome_Gallate = "#428953ff", Metagenome_Pyrogallol = "#ce2929ff", Metagenome_Hydroquinone = "#a3dd57ff", Metagenome_Hydroxyquinol = "#826d00ff", Metagenome_Benzoate = "#77e599ff", `Metatranscriptome_Benzoyl-CoA` = "#eecfa1ff")
+
+grid.col2 = c(Pseudomonadaceae = "#e00272ff", Nocardioidaceae  = "#800080", Pseudonocardiaceae = "#A52A2A", Zoogloeaceae = "#5675d6ff", Azospirillaceae = "#0000FF", Mycobacteriaceae = "#9400D3", Alcaligenaceae = "#826d00ff", Microbacteriaceae = "#FF0000", Conexibacteraceae = "#65ecefff", Cellulomonadaceae = "#008000", Streptomycetaceae = "#4682B4", Nitrobacteraceae = "#eecfa1ff", Conexivisphaeraceae = "#a3dd57ff", Oscillospiraceae = "#FF6347", Bogoriellaceae = "#FF00FF", Sanguibacteraceae = "#FFFF00", Rhodospirillaceae = "#4682B4", Micrococcaceae = "#000080", Comamonadaceae = "#E9967A")
+                                  
+
+
+set.seed(300000000) 
+
+# Plot chord diagram
+par(cex = 2.2, mar = c(0, 0, 0, 0))
+# re-set circos parameters
+circos.clear()
+chordDiagram(Comm_SM_Glo2_fam, order = order,  grid.col = grid.col, transparency = 0.8, annotationTrack = "grid",  preAllocateTracks = 1, annotationTrackHeight = c(0.08, 0.05), directional=1, direction.type = c("diffHeight", "arrows"), link.arr.type = "big.arrow",  diffHeight = -uh(1, "mm"),  h.ratio = 0.8, link.lwd = 1, link.lty = 1, link.border="gray35")
+circos.info()
+
+# add labels and axis manually
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+
+  # print labels & text size (cex)
+  # circos.text(mean(xlim), ylim[1] + .7, sector.name,
+  #             facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex=0.6)
+
+  # print axis
+  circos.axis(h = "top", labels.cex = 0.8, major.tick.length = 0.8,
+              sector.index = sector.name, track.index = 2)
+}, bg.border = NA)
+
+
+legend(x = -2.2, y = 1.2, 
+       legend = unique(order1), 
+        fill = grid.col1, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Metabolite", title.adj = 0.1) 
+
+legend(x = 0.9, y = 1.2, 
+       legend = unique(order2), 
+        fill = grid.col2, 
+       bty = "n", cex = 0.8,
+       x.intersp = 0.5, 
+       title = "Phylum", title.adj = 0.1) 
+```
